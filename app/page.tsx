@@ -1607,25 +1607,11 @@ export default function Home() {
                                     {renderText()}
                                 </p>
 
-                                {/* Reset Button with Confirmation */}
+                                {/* Reset Button */}
                                 <div className="flex items-center justify-center gap-4">
-                                    <AlertDialog>
-                                        <AlertDialogTrigger asChild>
-                                            <Button variant="outline">Reset Test</Button>
-                                        </AlertDialogTrigger>
-                                        <AlertDialogContent>
-                                            <AlertDialogHeader>
-                                                <AlertDialogTitle>Reset Test?</AlertDialogTitle>
-                                                <AlertDialogDescription>
-                                                    This will clear all your progress and metrics. Are you sure you want to start over?
-                                                </AlertDialogDescription>
-                                            </AlertDialogHeader>
-                                            <AlertDialogFooter className="sm:flex-row-reverse sm:justify-start">
-                                                <AlertDialogAction onClick={handleReset}>Reset</AlertDialogAction>
-                                                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                            </AlertDialogFooter>
-                                        </AlertDialogContent>
-                                    </AlertDialog>
+                                    <Button variant="outline" onClick={() => setShowResetDialog(true)}>
+                                        Reset Test
+                                    </Button>
                                     <span className="text-xs text-muted-foreground">Press Esc to reset</span>
                                 </div>
                             </CardContent>
