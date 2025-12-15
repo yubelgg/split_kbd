@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import Script from "next/script";
 import { useTheme } from "next-themes";
-import { Sun, Moon } from "lucide-react";
+import { Sun, Moon, Download } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -1297,6 +1297,50 @@ export default function Home() {
         containerRef.current?.focus();
     };
 
+    const exportSessionData = () => {
+        const sessionData = {
+            metadata: {
+                exportDate: new Date().toISOString(),
+                testSentence: targetText,
+                keyboardPreset: selectedKeyboard.name,
+                actuationForce: selectedKeyboard.actuation,
+            },
+            summary: {
+                wpm,
+                accuracy,
+                totalKeystrokes: totalKeystrokesTyped,
+                totalErrors,
+                durationMs: startTime ? Date.now() - startTime : 0,
+                avgLeftWristDeviation: avgLeftWristAngle,
+                avgRightWristDeviation: avgRightWristAngle,
+                avgLeftPronation,
+                avgRightPronation,
+                avgLeftExtension,
+                avgRightExtension,
+                leftFingerTravel,
+                rightFingerTravel,
+                totalFingerTravel: leftFingerTravel + rightFingerTravel,
+                cumulativeStrain: totalKeystrokesTyped * selectedKeyboard.actuation,
+            },
+            fingerUsage,
+            keystrokes,
+        };
+
+        const blob = new Blob([JSON.stringify(sessionData, null, 2)], {
+            type: 'application/json'
+        });
+        const url = URL.createObjectURL(blob);
+
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `ergotype-session-${new Date().toISOString().slice(0, 10)}.json`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        URL.revokeObjectURL(url);
+    };
+
     const renderText = () => {
         return targetText.split("").map((char, index) => {
             let className = "text-muted-foreground";
@@ -1607,11 +1651,17 @@ export default function Home() {
                                     {renderText()}
                                 </p>
 
-                                {/* Reset Button */}
+                                {/* Reset and Export Button */}
                                 <div className="flex items-center justify-center gap-4">
                                     <Button variant="outline" onClick={() => setShowResetDialog(true)}>
                                         Reset Test
                                     </Button>
+                                    {isFinished && (
+                                        <Button variant="default" onClick={exportSessionData}>
+                                            <Download className="w-4 h-4 mr-2" />
+                                            Export Data
+                                        </Button>
+                                    )}
                                     <span className="text-xs text-muted-foreground">Press Esc to reset</span>
                                 </div>
                             </CardContent>
