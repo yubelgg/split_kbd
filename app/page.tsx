@@ -106,8 +106,8 @@ const getWristStatus = (angle: number | null): { label: string; variant: "defaul
 const getPronationStatus = (angle: number | null): { label: string; variant: "default" | "secondary" | "destructive" | "outline" } | null => {
     if (angle === null) return null;
     const absAngle = Math.abs(angle);
-    if (absAngle >= 20 && absAngle <= 40) return { label: "Good", variant: "default" };
-    if ((absAngle >= 10 && absAngle < 20) || (absAngle > 40 && absAngle <= 50)) return { label: "Warning", variant: "secondary" };
+    if (absAngle >= 35 && absAngle <= 55) return { label: "Good", variant: "default" };
+    if ((absAngle >= 25 && absAngle < 35) || (absAngle > 55 && absAngle <= 65)) return { label: "Warning", variant: "secondary" };
     return { label: "Poor", variant: "destructive" };
 };
 
@@ -234,8 +234,8 @@ interface Keystroke {
 }
 
 export default function Home() {
-    const POSE_SMOOTHING_WINDOW = 10;       // Frames for forearm smoothing
-    const ANGLE_SMOOTHING_WINDOW = 15;      // Frames for angle smoothing
+    const POSE_SMOOTHING_WINDOW = 5;        // Frames for elbow smoothing 
+    const ANGLE_SMOOTHING_WINDOW = 7;       // Frames for angle smoothing
     const MAX_POSE_DELTA = 0.15;            // Max position jump per frame
     const MAX_ANGLE_DELTA = 50;             // Max angle jump per frame
     const FINGER_JITTER_THRESHOLD = 0.005;  // Min movement to count
@@ -312,6 +312,10 @@ export default function Home() {
     const poseRightElbow = useRef<{ x: number, y: number, z: number } | null>(null);
     const poseLeftWrist = useRef<{ x: number, y: number, z: number } | null>(null);
     const poseRightWrist = useRef<{ x: number, y: number, z: number } | null>(null);
+
+    // Elbow locking - elbows dont move during typing
+    const leftElbowLocked = useRef<boolean>(false);
+    const rightElbowLocked = useRef<boolean>(false);
 
     // Smoothing history buffers
     const leftAngleHistory = useRef<number[]>([]);
@@ -447,25 +451,33 @@ export default function Home() {
         poseElbowRef: React.MutableRefObject<{ x: number, y: number, z: number } | null>,
         poseWristRef: React.MutableRefObject<{ x: number, y: number, z: number } | null>
     ): number => {
-        // Check if we have pose data
-        if (!poseElbowRef.current || !poseWristRef.current) {
+        // Need elbow from Pose 
+        if (!poseElbowRef.current) {
             return 0;
         }
-        // Hand landmark 0 = wrist
         const handWrist = handLandmarks[0];
-        // Hand landmark 9 = middle finger MCP
+        // 4 MCP landmarks for hand direction
+        const indexMCP = handLandmarks[5];
         const middleMCP = handLandmarks[9];
+        const ringMCP = handLandmarks[13];
+        const pinkyMCP = handLandmarks[17];
 
-        // Vector 1: Forearm (elbow → wrist) from Pose 
-        const forearm = {
-            x: poseWristRef.current.x - poseElbowRef.current.x,
-            y: poseWristRef.current.y - poseElbowRef.current.y
+        // Center of all MCPs 
+        const mcpCenter = {
+            x: (indexMCP.x + middleMCP.x + ringMCP.x + pinkyMCP.x) / 4,
+            y: (indexMCP.y + middleMCP.y + ringMCP.y + pinkyMCP.y) / 4
         };
 
-        // Vector 2: Hand (wrist → middle MCP) from Hands 
+        // Vector 1: Forearm (elbow -> hand_wrist)
+        const forearm = {
+            x: handWrist.x - poseElbowRef.current.x,
+            y: handWrist.y - poseElbowRef.current.y
+        };
+
+        // Vector 2: Hand (wrist -> MCP center) 
         const hand = {
-            x: middleMCP.x - handWrist.x,
-            y: middleMCP.y - handWrist.y
+            x: mcpCenter.x - handWrist.x,
+            y: mcpCenter.y - handWrist.y
         };
 
         // Calculate signed angle between vectors using atan2
@@ -480,19 +492,27 @@ export default function Home() {
     };
 
     // Palm rotation angle (pronation = palm down, supination = palm up)
+    // Uses multiple landmark pairs for Z-depth 
     const calculatePronationAngle = (landmarks: Landmark[], isRightHand: boolean): number => {
         const indexMCP = landmarks[5];   // thumb side
+        const middleMCP = landmarks[9];  // middle
+        const ringMCP = landmarks[13];   // ring
         const pinkyMCP = landmarks[17];  // pinky side
-        const zDiff = indexMCP.z - pinkyMCP.z;  // negative Z = closer to camera
 
-        // Normalize by hand width for consistent measurement
+        // Use multiple Z-depth comparisons 
+        const zDiff1 = indexMCP.z - pinkyMCP.z;
+        const zDiff2 = indexMCP.z - ringMCP.z;
+        const zDiff3 = middleMCP.z - pinkyMCP.z;
+
+        const avgZDiff = (zDiff1 * 1.0 + zDiff2 * 0.5 + zDiff3 * 0.5) / 2.0;
+
         const handWidth = Math.sqrt(
             (indexMCP.x - pinkyMCP.x) ** 2 +
             (indexMCP.y - pinkyMCP.y) ** 2
         );
         if (handWidth < 0.01) return 0;
 
-        const angleRad = Math.atan2(zDiff, handWidth);
+        const angleRad = Math.atan2(avgZDiff, handWidth);
         let angleDeg = angleRad * (180 / Math.PI);
 
         if (!isRightHand) {
@@ -509,20 +529,23 @@ export default function Home() {
         poseWristRef: React.MutableRefObject<{ x: number, y: number, z: number } | null>,
         isRightHand: boolean
     ): number => {
-        if (!poseElbowRef.current || !poseWristRef.current) return 0;
+        // Elbow from Pose 
+        if (!poseElbowRef.current) return 0;
 
-        // Forearm vector (Y-Z plane for extension/flexion)
+        // Wrist from Hands model 
+        const handWrist = handLandmarks[0];
+        const middleMCP = handLandmarks[9];
+
+        // Forearm vector (Y-Z plane): elbow -> hand_wrist
         const forearm = {
-            y: poseWristRef.current.y - poseElbowRef.current.y,
-            z: poseWristRef.current.z - poseElbowRef.current.z
+            y: handWrist.y - poseElbowRef.current.y,
+            z: handWrist.z - poseElbowRef.current.z
         };
 
-        // Hand vector: wrist → middle MCP
-        const wrist = handLandmarks[0];
-        const middleMCP = handLandmarks[9];
+        // Hand vector: wrist -> middle MCP
         const hand = {
-            y: middleMCP.y - wrist.y,
-            z: middleMCP.z - wrist.z
+            y: middleMCP.y - handWrist.y,
+            z: middleMCP.z - handWrist.z
         };
 
         // Calculate signed angle using atan2
@@ -616,8 +639,13 @@ export default function Home() {
         return detectedFinger;
     };
 
-    // Process Pose results for forearm direction
+    // Elbows locked after first detection 
     const onPoseResults = useCallback((results: PoseResults) => {
+        // Skip if elbows locked
+        if (leftElbowLocked.current && rightElbowLocked.current) {
+            return;
+        }
+
         if (results.poseLandmarks && results.poseLandmarks.length > 0) {
             const landmarks = results.poseLandmarks;
 
@@ -630,40 +658,58 @@ export default function Home() {
 
             if (wrist15 && wrist16 && elbow13 && elbow14) {
                 // Use shoulders to establish body midline for more reliable hand assignment
-                // This handles off-center users better than comparing wrist positions directly
                 let wrist15IsLeft: boolean;
                 if (leftShoulder && rightShoulder) {
-                    // Body midline is between shoulders (in mirrored view, left shoulder has higher x)
                     const bodyMidline = (leftShoulder.x + rightShoulder.x) / 2;
-                    // In mirrored view: user's left hand is on RIGHT side of image (higher x)
                     wrist15IsLeft = wrist15.x > bodyMidline;
                 } else {
-                    // Fallback: compare wrist positions when shoulders not visible
                     wrist15IsLeft = wrist15.x > wrist16.x;
                 }
 
                 if (wrist15IsLeft) {
-                    // wrist15/elbow13 is user's LEFT arm (right side of image)
-                    // wrist16/elbow14 is user's RIGHT arm (left side of image)
-                    poseLeftElbow.current = smoothPosition(elbow13, leftElbowHistory.current, POSE_SMOOTHING_WINDOW, MAX_POSE_DELTA);
+                    if (!leftElbowLocked.current) {
+                        poseLeftElbow.current = smoothPosition(elbow13, leftElbowHistory.current, POSE_SMOOTHING_WINDOW, MAX_POSE_DELTA);
+                        if (leftElbowHistory.current.length >= POSE_SMOOTHING_WINDOW) {
+                            leftElbowLocked.current = true;
+                        }
+                    }
                     poseLeftWrist.current = smoothPosition(wrist15, leftWristHistory.current, POSE_SMOOTHING_WINDOW, MAX_POSE_DELTA);
-                    poseRightElbow.current = smoothPosition(elbow14, rightElbowHistory.current, POSE_SMOOTHING_WINDOW, MAX_POSE_DELTA);
+                    if (!rightElbowLocked.current) {
+                        poseRightElbow.current = smoothPosition(elbow14, rightElbowHistory.current, POSE_SMOOTHING_WINDOW, MAX_POSE_DELTA);
+                        if (rightElbowHistory.current.length >= POSE_SMOOTHING_WINDOW) {
+                            rightElbowLocked.current = true;
+                        }
+                    }
                     poseRightWrist.current = smoothPosition(wrist16, rightWristHistory.current, POSE_SMOOTHING_WINDOW, MAX_POSE_DELTA);
                 } else {
-                    // wrist16/elbow14 is user's LEFT arm (right side of image)
-                    // wrist15/elbow13 is user's RIGHT arm (left side of image)
-                    poseLeftElbow.current = smoothPosition(elbow14, leftElbowHistory.current, POSE_SMOOTHING_WINDOW, MAX_POSE_DELTA);
+                    if (!leftElbowLocked.current) {
+                        poseLeftElbow.current = smoothPosition(elbow14, leftElbowHistory.current, POSE_SMOOTHING_WINDOW, MAX_POSE_DELTA);
+                        if (leftElbowHistory.current.length >= POSE_SMOOTHING_WINDOW) {
+                            leftElbowLocked.current = true;
+                        }
+                    }
                     poseLeftWrist.current = smoothPosition(wrist16, leftWristHistory.current, POSE_SMOOTHING_WINDOW, MAX_POSE_DELTA);
-                    poseRightElbow.current = smoothPosition(elbow13, rightElbowHistory.current, POSE_SMOOTHING_WINDOW, MAX_POSE_DELTA);
+                    if (!rightElbowLocked.current) {
+                        poseRightElbow.current = smoothPosition(elbow13, rightElbowHistory.current, POSE_SMOOTHING_WINDOW, MAX_POSE_DELTA);
+                        if (rightElbowHistory.current.length >= POSE_SMOOTHING_WINDOW) {
+                            rightElbowLocked.current = true;
+                        }
+                    }
                     poseRightWrist.current = smoothPosition(wrist15, rightWristHistory.current, POSE_SMOOTHING_WINDOW, MAX_POSE_DELTA);
                 }
             } else {
-                // Only one or no arms detected - use MediaPipe's default assignment with smoothing
-                if (elbow13) {
+                // One or no arms detected
+                if (elbow13 && !leftElbowLocked.current) {
                     poseLeftElbow.current = smoothPosition(elbow13, leftElbowHistory.current, POSE_SMOOTHING_WINDOW, MAX_POSE_DELTA);
+                    if (leftElbowHistory.current.length >= POSE_SMOOTHING_WINDOW) {
+                        leftElbowLocked.current = true;
+                    }
                 }
-                if (elbow14) {
+                if (elbow14 && !rightElbowLocked.current) {
                     poseRightElbow.current = smoothPosition(elbow14, rightElbowHistory.current, POSE_SMOOTHING_WINDOW, MAX_POSE_DELTA);
+                    if (rightElbowHistory.current.length >= POSE_SMOOTHING_WINDOW) {
+                        rightElbowLocked.current = true;
+                    }
                 }
                 if (wrist15) {
                     poseLeftWrist.current = smoothPosition(wrist15, leftWristHistory.current, POSE_SMOOTHING_WINDOW, MAX_POSE_DELTA);
@@ -694,6 +740,10 @@ export default function Home() {
             setHandsDetected(0);
         }
 
+        // Hand wrists for drawing forearm vectors 
+        let leftHandWrist: { x: number, y: number, z: number } | null = null;
+        let rightHandWrist: { x: number, y: number, z: number } | null = null;
+
         if (results.multiHandLandmarks && results.multiHandedness) {
 
             for (let i = 0; i < results.multiHandLandmarks.length; i++) {
@@ -722,6 +772,14 @@ export default function Home() {
 
                 // MediaPipe handedness is mirrored: "Left" = user's RIGHT hand
                 const isRightHand = handedness === 'Left';
+
+                // Hand wrist for forearm drawing 
+                const handWrist = landmarks[0];
+                if (isRightHand) {
+                    rightHandWrist = handWrist;
+                } else {
+                    leftHandWrist = handWrist;
+                }
 
                 const deviation = isRightHand
                     ? calculateWrist2DAngle(landmarks, true, poseRightElbow, poseRightWrist)
@@ -904,15 +962,17 @@ export default function Home() {
             canvasCtx.stroke();
         };
 
-        // Draw left arm landmarks (user's right hand - cyan/blue tones)
-        drawPoseLandmark(poseLeftElbow.current, '#00FFFF');  // Left elbow - cyan
-        drawPoseLandmark(poseLeftWrist.current, '#0088FF');  // Left wrist - blue
-        drawForearmVector(poseLeftElbow.current, poseLeftWrist.current, '#00AAFF'); // Left forearm - light blue
+        // Draw left arm landmarks 
+        drawPoseLandmark(poseLeftElbow.current, '#00FFFF');
+        if (leftHandWrist) {
+            drawForearmVector(poseLeftElbow.current, leftHandWrist, '#00AAFF');
+        }
 
-        // Draw right arm landmarks (user's left hand - yellow/orange tones)
-        drawPoseLandmark(poseRightElbow.current, '#FFFF00');  // Right elbow - yellow
-        drawPoseLandmark(poseRightWrist.current, '#FFAA00');  // Right wrist - orange
-        drawForearmVector(poseRightElbow.current, poseRightWrist.current, '#FFD700'); // Right forearm - gold
+        // Draw right arm landmarks 
+        drawPoseLandmark(poseRightElbow.current, '#FFFF00');
+        if (rightHandWrist) {
+            drawForearmVector(poseRightElbow.current, rightHandWrist, '#FFD700');
+        }
 
         canvasCtx.restore();
     }, []);
@@ -1114,6 +1174,11 @@ export default function Home() {
                 rightExtensionBaseline.current = null;
                 baselineCalibrated.current = false;
                 calibrationResetTime.current = Date.now();
+                // Reset elbow locks to recapture position
+                leftElbowLocked.current = false;
+                rightElbowLocked.current = false;
+                leftElbowHistory.current = [];
+                rightElbowHistory.current = [];
                 // Clear smoothing history
                 leftAngleHistory.current = [];
                 rightAngleHistory.current = [];
@@ -1268,6 +1333,11 @@ export default function Home() {
         rightPronationHistory.current = [];
         leftExtensionHistory.current = [];
         rightExtensionHistory.current = [];
+        // Reset elbow locks to recapture position
+        leftElbowLocked.current = false;
+        rightElbowLocked.current = false;
+        leftElbowHistory.current = [];
+        rightElbowHistory.current = [];
         // Reset calibration baseline for new session
         leftWristBaseline.current = null;
         rightWristBaseline.current = null;
