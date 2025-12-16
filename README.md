@@ -53,6 +53,48 @@ ErgoType enables quantitative comparison between traditional and ergonomic keybo
 - **UI**: Tailwind CSS with shadcn/ui components
 - **Processing**: All computation runs in-browser (no server required)
 
+## Code Structure
+
+```
+split_kbd/
+├── app/
+│   └── page.tsx # Main application (all core logic)
+├── components/ui/     # UI components (shadcn/ui)
+└── lib/utils.ts       # Utility functions
+```
+
+### Data Flow
+
+```
+┌─────────┐    ┌───────────┐    ┌────────────┐    ┌─────────────┐    ┌─────────┐
+│ Webcam  │ -> │ MediaPipe │ -> │ Smoothing  │ -> │ Calculate   │ -> │ Display │
+│ Frame   │    │ Detection │    │ & Filter   │    │ Angles      │    │ & Log   │
+└─────────┘    └───────────┘    └────────────┘    └─────────────┘    └─────────┘
+```
+
+**Step 1: Frame Capture**
+- Webcam captures at 1280×720 resolution
+- Frames processed via `requestAnimationFrame` loop
+
+**Step 2: MediaPipe Detection**
+- **Pose model** detects elbow positions (for forearm direction)
+- **Hands model** detects 21 landmarks per hand (wrist, knuckles, fingertips)
+
+**Step 3: Smoothing & Filtering**
+- 5-frame median filter smooths elbow/wrist positions
+- 7-frame median filter smooths calculated angles
+- Outlier rejection discards frames with sudden jumps (>0.15 normalized distance)
+
+**Step 4: Angle Calculation**
+- **Wrist Deviation**: Angle between forearm vector (elbow -> wrist) and hand vector (wrist -> knuckles)
+- **Pronation**: Z-depth difference between index and pinky knuckles (how rotated the palm is)
+- **Extension**: Angle between forearm and hand in the vertical plane (wrist bent up/down)
+
+**Step 5: Display & Logging**
+- Angles classified as Good/Warning/Poor based on ergonomic thresholds
+- On each keypress: current angles + detected finger saved to keystroke log
+- After test: recommendations generated based on average angles
+
 ## Getting Started
 
 ### Prerequisites
