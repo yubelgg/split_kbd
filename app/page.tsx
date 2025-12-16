@@ -142,9 +142,9 @@ const generateRecommendations = (
     const pronations = [leftPronation, rightPronation].filter((a): a is number => a !== null);
     if (pronations.length > 0) {
         const avgPronation = pronations.reduce((a, b) => a + b, 0) / pronations.length;
-        if (Math.abs(avgPronation) < 10 || Math.abs(avgPronation) > 50) {
+        if (Math.abs(avgPronation) < 25 || Math.abs(avgPronation) > 65) {
             tips.push("Your forearm rotation is outside the comfortable range. Try tilting your keyboard or using a wrist rest to achieve a more neutral palm angle.");
-        } else if (Math.abs(avgPronation) < 20 || Math.abs(avgPronation) > 40) {
+        } else if (Math.abs(avgPronation) < 35 || Math.abs(avgPronation) > 55) {
             tips.push("Your palm angle could be improved. A slight tilt of your keyboard may help reduce forearm strain.");
         }
     }
@@ -1613,7 +1613,7 @@ export default function Home() {
                                             <h4 className="font-medium">Understanding Metrics</h4>
                                             <p className="text-muted-foreground">
                                                 <strong>Wrist Angle:</strong> Measures ulnar/radial deviation. Keep close to 0° to prevent strain.<br />
-                                                <strong>Pronation:</strong> Palm rotation angle. 20-40° is natural and relaxed.<br />
+                                                <strong>Pronation:</strong> Palm rotation angle. 35-55° is natural and relaxed.<br />
                                                 <strong>Finger Travel:</strong> Total finger movement. Lower values indicate more efficient typing.
                                             </p>
                                         </div>
@@ -1905,7 +1905,7 @@ export default function Home() {
                                             </div>
                                         </TooltipTrigger>
                                         <TooltipContent>
-                                            <p>Palm rotation. 20-40° is relaxed.</p>
+                                            <p>Palm rotation. 35-55° is relaxed.</p>
                                         </TooltipContent>
                                     </Tooltip>
                                     <Tooltip>
@@ -1987,7 +1987,7 @@ export default function Home() {
                                             </div>
                                         </TooltipTrigger>
                                         <TooltipContent>
-                                            <p>Palm rotation. 20-40° is relaxed.</p>
+                                            <p>Palm rotation. 35-55° is relaxed.</p>
                                         </TooltipContent>
                                     </Tooltip>
                                     <Tooltip>
